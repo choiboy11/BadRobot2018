@@ -6,11 +6,9 @@ import org.usfirst.frc.team1014.robot.util.MiniPID;
 import com.ctre.phoenix.motorcontrol.ControlMode;
 import com.ctre.phoenix.motorcontrol.can.TalonSRX;
 import com.kauailabs.navx.frc.AHRS;
-import edu.wpi.first.wpilibj.Ultrasonic;
 
 import badlog.lib.BadLog;
 import edu.wpi.first.wpilibj.DriverStation;
-import edu.wpi.first.wpilibj.PWM;
 import edu.wpi.first.wpilibj.SPI.Port;
 import edu.wpi.first.wpilibj.command.Subsystem;
 
@@ -22,9 +20,7 @@ public class Drivetrain extends Subsystem {
 
 	private double targetAngle;
 	MiniPID miniPID;
-	Ultrasonic ultra = new Ultrasonic(0,1);
 	double currentAngle;
-	AHRS navx;
 
 	public Drivetrain() {
 		rightFront = new TalonSRX(RobotMap.DRIVE_RIGHT_1_ID);
@@ -58,52 +54,49 @@ public class Drivetrain extends Subsystem {
 				"join:Drivetrain/Output Voltages");
 		BadLog.createTopic("Drivetrain/Left Back Voltage", "V", () -> leftBack.getMotorOutputVoltage(), "hide",
 				"join:Drivetrain/Output Voltages");
+		
+		BadLog.createTopic("Drivetrain/X Displacement", "m", () -> (double)ahrs.getDisplacementX(), "hide",
+				"join:Drivetrain/Displacement Values");
+		BadLog.createTopic("Drivetrain/Y Displacement", "m", () -> (double)ahrs.getDisplacementY(), "hide",
+				"join:Drivetrain/Displacement Values");
+		BadLog.createTopic("Drivetrain/Z Displacement", "m", () -> (double)ahrs.getDisplacementZ(), "hide",
+				"join:Drivetrain/Displacement Values");
 
 		ahrs = new AHRS(Port.kMXP);
 		ahrs.zeroYaw();
-		
+
 		BadLog.createTopic("Drivetrain/Angle", "deg", () -> getAngleCCW());
+
+		BadLog.createTopic("Drivetrain/Accel X", "m/s^2", () -> (double) ahrs.getWorldLinearAccelX());
+		BadLog.createTopic("Drivetrain/Accel Y", "m/s^2", () -> (double) ahrs.getWorldLinearAccelY());
+		BadLog.createTopic("Drivetrain/Accel Z", "m/s^2", () -> (double) ahrs.getWorldLinearAccelZ());
 
 		targetAngle = 0;
 		miniPID = new MiniPID(.05, .001, .20);
 		miniPID.setOutputLimits(.5);
-		navx = new AHRS(SPI.Port.kMXP);
-		navx.zeroYaw();
-		
-		ultra.setAutomaticMode(true);
-	}
-	
-	public void zeroYaw() {
-		ahrs.zeroYaw();
 	}
 
-	public void directDrive(double left, double right) 
-	{
-		System.out.println(ultra.getRangeInches());
-		//rightFront.set(ControlMode.PercentOutput, -right);
-		//leftFront.set(ControlMode.PercentOutput, left);
+	public void resetPID() {
+		miniPID.reset();
 	}
-	
-	public double getYaw() {
-		return ahrs.getYaw();
+
+	public void resetAHRS() {
+		ahrs.reset();
 	}
-	
-	public void rotate(double targetAngle, double power) {
-		if(targetAngle < 0)
-			directDrive(-power, power);
-		else
-			directDrive(power, -power);
+
+	public void directDrive(double left, double right) {
+		rightFront.set(ControlMode.PercentOutput, -right);
+		leftFront.set(ControlMode.PercentOutput, left);
 	}
-	
+
 	public void autoTurn() {
 		double output = miniPID.getOutput(getAngleCCW(), targetAngle);
 		directDrive(-output, output);
 	}
-	
+
 	public void driveStraight(double speed) {
 		double turnComp = miniPID.getOutput(getAngleCCW(), targetAngle);
 		directDrive(speed - turnComp, speed + turnComp);
-		System.out.println(ahrs.getDisplacementX() + ", " + ahrs.getDisplacementY() + ", " + ahrs.getDisplacementZ());
 	}
 
 	public void initDefaultCommand() {
@@ -112,17 +105,23 @@ public class Drivetrain extends Subsystem {
 	public double getTargetAngle() {
 		return targetAngle;
 	}
-	
-	public int switchSide()
-	{
-		if(DriverStation.getInstance().getGameSpecificMessage().charAt(0) == 'R')
+
+	/**
+	 * 
+	 * @return 1 for right, -1 for left
+	 */
+	public int getSwitchSide() {
+		if (DriverStation.getInstance().getGameSpecificMessage().charAt(0) == 'R')
 			return 1;
 		return -1;
 	}
-	
-	public int scaleSide()
-	{
-		if(DriverStation.getInstance().getGameSpecificMessage().charAt(1) == 'R')
+
+	/**
+	 * 
+	 * @return 1 for right, -1 for left
+	 */
+	public int getScaleSide() {
+		if (DriverStation.getInstance().getGameSpecificMessage().charAt(1) == 'R')
 			return 1;
 		return -1;
 	}
@@ -130,8 +129,8 @@ public class Drivetrain extends Subsystem {
 	public void setTargetAngle(double targetAngle) {
 		this.targetAngle = targetAngle;
 	}
-	
-	private double getAngleCCW() {
+
+	public double getAngleCCW() {
 		return -ahrs.getAngle();
 	}
 }

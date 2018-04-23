@@ -4,9 +4,15 @@ import java.util.Optional;
 
 import org.usfirst.frc.team1014.robot.commands.Autonomous;
 import org.usfirst.frc.team1014.robot.commands.Teleop;
-import org.usfirst.frc.team1014.robot.commands.auto.AutoRLScale;
-import org.usfirst.frc.team1014.robot.commands.auto.AutoRLSwitch;
-import org.usfirst.frc.team1014.robot.commands.auto.AutoScaleC;
+import org.usfirst.frc.team1014.robot.commands.auto.AutoDelay;
+import org.usfirst.frc.team1014.robot.commands.auto.AutoExtremesScale;
+import org.usfirst.frc.team1014.robot.commands.auto.AutoMode;
+import org.usfirst.frc.team1014.robot.commands.auto.Prohibit;
+import org.usfirst.frc.team1014.robot.commands.auto.StartCenterScale;
+import org.usfirst.frc.team1014.robot.commands.auto.StartCenterSwitch;
+import org.usfirst.frc.team1014.robot.commands.auto.StartLeft;
+import org.usfirst.frc.team1014.robot.commands.auto.StartRight;
+import org.usfirst.frc.team1014.robot.subsystems.Climber;
 import org.usfirst.frc.team1014.robot.subsystems.Drivetrain;
 import org.usfirst.frc.team1014.robot.subsystems.Grabber;
 import org.usfirst.frc.team1014.robot.subsystems.Lifter;
@@ -14,10 +20,10 @@ import org.usfirst.frc.team1014.robot.util.LogUtil;
 
 import badlog.lib.BadLog;
 import badlog.lib.DataInferMode;
+import edu.wpi.first.wpilibj.CameraServer;
 import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.RobotController;
 import edu.wpi.first.wpilibj.TimedRobot;
-import edu.wpi.first.wpilibj.command.Command;
 import edu.wpi.first.wpilibj.command.Scheduler;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
@@ -26,29 +32,51 @@ public class Robot extends TimedRobot {
 	public static OI oi;
 
 	Drivetrain driveTrain;
-
 	Lifter lifter;
 	Grabber grabber;
+	Climber climber;
 
 	Teleop teleopCG;
 	Autonomous autoCG;
-	
+
 	private BadLog logger;
 	private long startTimeNS;
 	private long lastLog;
-	Command autonomousCommand;
-	SendableChooser autoChooser;
 
+	SendableChooser autoChooser, prohibitChooser;
+
+	private boolean initialized = false;
+
+	/*
+	 * Not a real init, delay until we have info.  If there is no driver station attached, logging is not necessary.
+	 */
 	@Override
 	public void robotInit() {
-		
-		autoChooser = new SendableChooser();
-		autoChooser.addDefault("Default program", new AutoRLScale(driveTrain, lifter, grabber, 0));
-		autoChooser.addObject("R, L, Scale", new AutoRLScale(driveTrain, lifter, grabber, 0));
-		autoChooser.addObject("R, L, Switch", new AutoRLSwitch(driveTrain, lifter, grabber, 0));
-		autoChooser.addObject("C, Scale", new AutoScaleC(driveTrain, 0));
-		//autoChooser.addObject("C, Switch(short)", new AutoSwitchCShort(driveTrain, 0));
-		SmartDashboard.putData("Autonomous Mode Chooser", autoChooser);
+		if (shouldInit())
+			init();
+	}
+
+	/*
+	 * Checks to see if driver station is attached.
+	 */
+	private boolean shouldInit() {
+		if (!DriverStation.getInstance().isDisabled())
+			return true;
+
+		if (DriverStation.getInstance().isDSAttached())
+			return true;
+
+		return false;
+	}
+
+	private void init() {
+		if (initialized) {
+			System.out.println("||| ATTEMPTED TO INIT SECOND TIME |||");
+			System.err.println("||| ATTEMPTED TO INIT SECOND TIME |||");
+			return;
+		}
+		initialized = true;
+
 		startTimeNS = System.nanoTime();
 		lastLog = System.currentTimeMillis();
 		String session = LogUtil.genSessionName();
@@ -56,7 +84,8 @@ public class Robot extends TimedRobot {
 		logger = BadLog.init("/home/lvuser/log/" + session + ".bag");
 		{
 			BadLog.createValue("Start Time", LogUtil.getTimestamp());
-			BadLog.createValue("Event Name", Optional.ofNullable(DriverStation.getInstance().getEventName()).orElse(""));
+			BadLog.createValue("Event Name",
+					Optional.ofNullable(DriverStation.getInstance().getEventName()).orElse(""));
 			BadLog.createValue("Match Type", DriverStation.getInstance().getMatchType().toString());
 			BadLog.createValue("Match Number", "" + DriverStation.getInstance().getMatchNumber());
 			BadLog.createValue("Alliance", DriverStation.getInstance().getAlliance().toString());
@@ -73,25 +102,99 @@ public class Robot extends TimedRobot {
 			driveTrain = new Drivetrain();
 			grabber = new Grabber();
 			lifter = new Lifter();
+			climber = new Climber();
 
-			teleopCG = new Teleop(driveTrain, grabber, lifter);
+			teleopCG = new Teleop(driveTrain, grabber, lifter, climber);
 			autoCG = new Autonomous(driveTrain, lifter, grabber);
-		
+
+			autoChooser = new SendableChooser();
+			prohibitChooser = new SendableChooser();
+
+			autoChooser.addDefault("Center Switch", AutoMode.CENTER_SWITCH);
+			autoChooser.addObject("Right Side", AutoMode.RIGHT);
+			autoChooser.addObject("Left Side", AutoMode.LEFT);
+			autoChooser.addObject("Center Scale", AutoMode.CENTER_SCALE);
+
+			prohibitChooser.addDefault("None", Prohibit.NONE);
+			prohibitChooser.addObject("No switch", Prohibit.NO_SWITCH);
+			prohibitChooser.addObject("No Scale", Prohibit.NO_SCALE);
+
+			SmartDashboard.putNumber("Delay", 0);
+			SmartDashboard.putData("Prohibit Chooser", prohibitChooser);
+			SmartDashboard.putData("Autonomous Mode Chooser", autoChooser);
+
+			CameraServer.getInstance().startAutomaticCapture();
 		}
 		logger.finishInitialization();
 	}
 
 	@Override
 	public void autonomousInit() {
-		Scheduler.getInstance().removeAll();
-		autonomousCommand = (Command) autoChooser.getSelected();
-		autonomousCommand.start();
+		if (!initialized)
+			init();
 
+		Scheduler.getInstance().removeAll();
+
+		driveTrain.resetAHRS();
+		
+		autoCG.addSequential(new AutoDelay(SmartDashboard.getNumber("Delay", 0)));
+		
+		/*switch ((AutoMode) autoChooser.getSelected()) {
+
+		case CENTER_SCALE:
+			autoCG.addSequential(new StartCenterScale(driveTrain, lifter, grabber));
+			break;
+		case RIGHT:
+			switch ((Prohibit) prohibitChooser.getSelected()) {
+
+			case NONE:
+				autoCG.addSequential(new StartRight(driveTrain, lifter, grabber, 0, driveTrain.getScaleSide(),
+						driveTrain.getSwitchSide()));
+				break;
+
+			case NO_SWITCH:
+				autoCG.addSequential(new StartRight(driveTrain, lifter, grabber, 1, driveTrain.getScaleSide(),
+						driveTrain.getSwitchSide()));
+				break;
+			case NO_SCALE:
+				autoCG.addSequential(new StartRight(driveTrain, lifter, grabber, 2, driveTrain.getScaleSide(),
+						driveTrain.getSwitchSide()));
+				break;
+			}
+			break;
+
+		case LEFT:
+			switch ((Prohibit) prohibitChooser.getSelected()) {
+
+			case NONE:
+				autoCG.addSequential(new StartLeft(driveTrain, lifter, grabber, 0, driveTrain.getScaleSide(),
+						driveTrain.getSwitchSide()));
+				break;
+			case NO_SWITCH:
+				autoCG.addSequential(new StartLeft(driveTrain, lifter, grabber, 1, driveTrain.getScaleSide(),
+						driveTrain.getSwitchSide()));
+				break;
+			case NO_SCALE:
+				autoCG.addSequential(new StartLeft(driveTrain, lifter, grabber, 2, driveTrain.getScaleSide(),
+						driveTrain.getSwitchSide()));
+				break;
+			}
+			break;
+		default: // Center Switch
+			autoCG.addSequential(new StartCenterSwitch(driveTrain, lifter, grabber));
+
+		}*/
+		autoCG.addSequential(new StartRight(driveTrain, lifter, grabber, 0, driveTrain.getScaleSide(),
+						driveTrain.getSwitchSide()));
+		
 		autoCG.start();
 	}
 
 	@Override
 	public void teleopInit() {
+		if (!initialized)
+			init();
+
 		Scheduler.getInstance().removeAll();
 
 		teleopCG.start();
@@ -99,11 +202,14 @@ public class Robot extends TimedRobot {
 
 	@Override
 	public void testInit() {
+		if (!initialized)
+			init();
 		Scheduler.getInstance().removeAll();
 	}
 
 	@Override
 	public void disabledInit() {
+		// Do not init robot here, this will happen even without DS
 		Scheduler.getInstance().removeAll();
 	}
 
@@ -114,6 +220,7 @@ public class Robot extends TimedRobot {
 
 	@Override
 	public void teleopPeriodic() {
+
 		periodic();
 	}
 
@@ -124,6 +231,13 @@ public class Robot extends TimedRobot {
 
 	@Override
 	public void disabledPeriodic() {
+		if (!initialized) {
+			if (shouldInit())
+				init();
+			else
+				return;
+		}
+
 		periodic();
 	}
 

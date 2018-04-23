@@ -1,6 +1,7 @@
 package org.usfirst.frc.team1014.robot.commands.auto;
 
-import org.usfirst.frc.team1014.robot.commands.Spin;
+import org.usfirst.frc.team1014.robot.commands.core.DriveStraightDistance;
+import org.usfirst.frc.team1014.robot.commands.core.Spin;
 import org.usfirst.frc.team1014.robot.subsystems.Drivetrain;
 import org.usfirst.frc.team1014.robot.subsystems.Grabber;
 import org.usfirst.frc.team1014.robot.subsystems.Lifter;
@@ -12,13 +13,13 @@ public class AutoRLSwitch extends CommandGroup{
 	/**
 	 * 
 	 * @param driveTrain
-	 * @param direction - -1 for right, 1 for left
+	 * @param direction - 1 for right, -1 for left
 	 */
-	public AutoRLSwitch(Drivetrain driveTrain, Lifter lifter, Grabber grabber, int direction) {
-		this.addSequential(new AutoRLtoAB(driveTrain));
+	public AutoRLSwitch(Drivetrain driveTrain, Lifter lifter, Grabber grabber, int direction) {		//untested
+		this.addSequential(new DriveStraightDistance(driveTrain, 140));		//value is definitely not right
 		this.addSequential(new Spin(driveTrain, direction * 90));
-		this.addSequential(new AutoRaiseSwitch(lifter));
-		this.addSequential(new AutoRelease(grabber));
+		this.addSequential(new AutoMoveCloseSwitch(driveTrain, lifter, grabber));
+
 
 	}
 }
